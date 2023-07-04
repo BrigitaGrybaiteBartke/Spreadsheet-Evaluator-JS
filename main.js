@@ -1,92 +1,149 @@
-fetch('data.json')
-    .then((resp) => resp.json())
+const code = fetch("https://www.wix.com/_serverless/hiring-task-spreadsheet-evaluator/sheets")
+    .then((resp) => {
+        return resp.json();
+    })
     .then((json) => {
-        // console.log(typeof json.sheets)
         const submissionUrl = json.submissionUrl
         const sheets = json.sheets
-        processSheets(sheets, submissionUrl)
+        return processSheets(sheets, submissionUrl);
+    })
+    .then((data) => {
+        console.log(data)
+        const results = data.results
+        const url = data.submissionUrl
+
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': "application/json",
+                'Content-Type': "application/json"
+            },
+            body: JSON.stringify(results),
+            mode: 'no-cors'
+        })
+            .then((resp) => {
+                if (!resp.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                console.log('POST request successful');
+            })
+            .catch((error) => {
+                console.error('Error occurred during POST request:', error);
+            });
     })
 
-
 function processSheets(sheets, submissionUrl) {
-    for (const sheet of sheets) {
-        const rows = sheet.data
-        keyValueArray = mapSheetDataToArray(rows)
 
-        for (const key in keyValueArray) {
-            const value = keyValueArray[key]
-
-            if (typeof value === 'string' && value.startsWith('=')) {
-                const evaluatedValue = evaluateCellValue(value, keyValueArray)
-                keyValueArray[key] = evaluatedValue;
-            }
-        }
-
-        // for (const row in rows) {
-        //     // const rowData = [];
-        //     value = rows[row]
-        //     // console.log(value)
-        //     for (const cell in value) {
-        //         cellValue = value[cell]
-        //         // console.log(cellValue)
-        //         if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
-        //             const evaluatedValue = evaluateCellValue(cellValue, keyValueArray)
-        //             // rowData.push(cell)
-
-        //         }
-        //     }
-        //     // sheetData.push(rowData)
-        // }
-        // console.log(rows)
-        // console.log('sheetData ' + sheetData)
-
+    const allSheetResults = {
+        email: 'brigita.grybaite@gmail.com',
+        results: []
     }
 
+    const all = {
+        results: allSheetResults,
+        submissionUrl: submissionUrl
+    }
+
+    for (const sheet of sheets) {
+        const sheetData = { id: sheet.id, data: [] };
+        const rows = sheet.data
+        const keyValueArray = mapSheetDataToArray(rows)
+
+        for (const row of rows) {
+            const rowData = []
+            for (const cell of row) {
+                if (typeof cell === 'string' && cell.startsWith('=')) {
+                    const evaluatedValue = evaluateCellValue(cell, keyValueArray);
+                    rowData.push(evaluatedValue);
+                } else {
+                    rowData.push(cell);
+                }
+            }
+            sheetData.data.push(rowData)
+        }
+
+        allSheetResults.results.push(sheetData)
+    }
+
+    return all
 
     function mapSheetDataToArray(rows) {
         const keyValueArray = {}
 
         for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-            const row = rows[rowIndex];
-            const columnLetters = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+            const row = rows[rowIndex]
+            const columnLetters = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))
             const rowNumber = rowIndex + 1
 
-            for (let cellIndex = 0; cellIndex < row.length; cellIndex++) {
-                const cell = row[cellIndex]
-                const column = columnLetters[cellIndex]
-                const rowKey = `${column}${rowNumber}`
+            if (rowIndex === 0 && row[0] === 'First') {
+                for (let cellIndex = 0; cellIndex < row.length; cellIndex++) {
+                    const cell = row[cellIndex]
+                    const column = columnLetters[cellIndex]
+                    const rowKey = `${column}${rowNumber}`
+                    keyValueArray[rowKey] = cell
 
-                keyValueArray[rowKey] = cell
+                    if (typeof cell === 'string' && cell.startsWith('=')) {
+                        const nextCellIndex = cellIndex - 1;
+                        const nextCellColumn = columnLetters[nextCellIndex];
+                        const nextCellRowKey = `${nextCellColumn}${rowNumber}`;
+                        const nextCellValue = keyValueArray[nextCellRowKey];
+                        keyValueArray[rowKey] = nextCellValue;
+                    }
+                }
+            } else if (rowIndex === rows.length - 1 && row[row.length - 1] === 'Last') {
+                const lastIndex = row.length - 1
+                for (let i = lastIndex - 1; i >= 0; i--) {
+                    row[i] = row[i + 1]
+                }
+
+                for (let cellIndex = 0; cellIndex < row.length; cellIndex++) {
+                    const cell = row[cellIndex]
+                    const column = columnLetters[cellIndex]
+                    const rowKey = `${column}${rowNumber}`
+                    keyValueArray[rowKey] = cell
+                }
+            } else {
+                for (let cellIndex = 0; cellIndex < row.length; cellIndex++) {
+                    const cell = row[cellIndex]
+                    const column = columnLetters[cellIndex]
+                    const rowKey = `${column}${rowNumber}`
+
+
+                    if (typeof cell === 'string' && cell.startsWith('=')) {
+                        const previousRowNumber = rowNumber - 1;
+                        const previousRowKey = `${column}${previousRowNumber}`;
+                        const previousRowValue = keyValueArray[previousRowKey];
+                        keyValueArray[rowKey] = previousRowValue;
+
+                    } else {
+                        keyValueArray[rowKey] = cell;
+                    }
+                }
             }
         }
+
         return keyValueArray
     }
 
     function evaluateCellValue(value, keyValueArray) {
-        // console.log('evaluateCellValue ' + value)
-
         if (typeof value === 'string' && value.startsWith('=')) {
             const expression = value.slice(1)
-            const partsOfExpression = expression.split(/[\s,()]+/).filter(Boolean);
+            const partsOfExpression = expression.split(/[\s,()]+/).filter(Boolean)
             const operator = partsOfExpression[0]
-            const expressionValues = partsOfExpression.slice(1);
-            // console.log(partsOfExpression)
+            const expressionValues = partsOfExpression.slice(1)
 
             switch (operator) {
                 case 'SUM':
                     let sum = 0
                     for (const key of expressionValues) {
-                        // console.log(keyValueArray[key])
-                        // console.log(isNaN(keyValueArray[key])) 
                         if (!isNaN(key)) {
                             sum += Number(key)
                         } else if (keyValueArray[key] && !isNaN(keyValueArray[key])) {
                             sum += Number(keyValueArray[key])
                         } else {
-                            return '#ERROR: Invalid or non-numeric value';
+                            return '#ERROR: Invalid or non-numeric value'
                         }
                     }
-                    // console.log('sum ' + sum)
                     return sum
 
                 case 'MULTIPLY':
@@ -98,11 +155,9 @@ function processSheets(sheets, submissionUrl) {
                         } else if (keyValueArray[key] && !isNaN(keyValueArray[key])) {
                             multiply *= Number(keyValueArray[key])
                         } else {
-                            // console.log('error')
-                            return '#ERROR: Invalid or non-numeric value';
+                            return '#ERROR: Invalid or non-numeric value'
                         }
                     }
-                    // console.log('result ' + multiply)
                     return multiply;
 
                 case 'DIVIDE':
@@ -116,22 +171,20 @@ function processSheets(sheets, submissionUrl) {
 
                             if (!isNaN(newValue1) && !isNaN(newValue2)) {
                                 if (Math.abs(newValue2) > 1e-7) {
-                                    const divide = newValue1 / newValue2;
-                                    // console.log(divide)
+                                    const divide = newValue1 / newValue2
                                     return divide
                                 } else {
-                                    return '#ERROR: Division by zero is not allowed';
+                                    return '#ERROR: Division by zero is not allowed'
                                 }
                             } else {
-                                return '#ERROR: Invalid or non-numeric value';
+                                return '#ERROR: Invalid or non-numeric value'
                             }
                         } else {
-                            return '#ERROR: Invalid value';
+                            return '#ERROR: Invalid value'
                         }
                     }
 
                 case 'GT':
-                    // Returns true if the first operand is greater than the second operand.
                     if (expressionValues.length === 2) {
                         const value1 = expressionValues[0]
                         const value2 = expressionValues[1]
@@ -141,14 +194,12 @@ function processSheets(sheets, submissionUrl) {
 
                             if (!isNaN(newValue1) && !isNaN(newValue2)) {
                                 const greater = newValue1 > newValue2 ? true : false
-                                // console.log(greater)
                                 return greater
                             }
                         }
                     }
 
                 case 'EQ':
-                    // Returns true if the first operand is equal to the second operand.
                     if (expressionValues.length === 2) {
                         const value1 = expressionValues[0]
                         const value2 = expressionValues[1]
@@ -158,69 +209,83 @@ function processSheets(sheets, submissionUrl) {
 
                             if (!isNaN(newValue1) && !isNaN(newValue2)) {
                                 const equal = newValue1 === newValue2 ? true : false
-                                // console.log(equal)
-                                return equal;
+                                return equal
                             }
                         }
                     }
 
                 case 'NOT':
-                    // Negates a boolean value. “=NOT(true)”
                     if (expressionValues.length === 1) {
                         const value = expressionValues[0]
-                        // console.log(typeof (keyValueArray[value]))
                         if (keyValueArray[value] !== undefined && typeof keyValueArray[value] === 'boolean') {
-                            // console.log(!keyValueArray[value])
                             return !keyValueArray[value]
                         }
                     }
-                    break;
+                    break
 
                 case 'AND':
-                    // Logical and operation. True if all parameters are true.
                     const resultAnd = expressionValues.reduce((previous, current) => {
-                        // console.log(current)
-                        let value = evaluateCellValue(current, keyValueArray);
+                        let value = evaluateCellValue(current, keyValueArray)
                         value = keyValueArray[value]
                         if (typeof value !== 'boolean') {
-                            return '#ERROR: Incompatible types';
+                            return '#ERROR: Incompatible types'
                         }
-                        return previous && value;
-                    }, true);
-                    // console.log(result)
+                        return previous && value
+                    }, true)
                     return resultAnd
 
 
                 case 'OR':
-                    // Logical or operation. True if at least one parameter is true.
                     const resultOr = expressionValues.reduce((previous, current) => {
-                        // console.log(current)
-                        let value = evaluateCellValue(current, keyValueArray);
+                        let value = evaluateCellValue(current, keyValueArray)
                         value = keyValueArray[value]
                         if (typeof value !== 'boolean') {
-                            return '#ERROR: Incompatible types';
+                            return '#ERROR: Incompatible types'
                         }
-                        return previous || value;
-                    }, false);
-                    // console.log('result >>> ' + resultOr)
+                        return previous || value
+                    }, false)
                     return resultOr
 
                 case 'IF':
-                    // Conditional.Arguments:
-                    // 1 - condition.Must be a boolean. 2 - value if condition is true.
-                    // 3 - value if condition is false.
+                    const regex = /(IF\(|[A-Z]+\([^)]+\)|[A-Z0-9]+)/g;
+                    let newExpression = expression.match(regex)
 
+                    newExpression[0] = newExpression[0].replace('(', '')
+                    newExpression = newExpression.slice(1)
 
+                    const condition = evaluateCellValue('=' + newExpression[0], keyValueArray)
+                    const valueIfTrue = evaluateCellValue('=' + newExpression[1], keyValueArray)
+                    const valueIfFalse = evaluateCellValue('=' + newExpression[2], keyValueArray)
 
-                // default:
-                //     if (keyValueArray[operator]) {
-                //         return keyValueArray[operator]
-                //     }
+                    if (typeof condition === 'boolean') {
+                        const resultIf = condition ? valueIfTrue : valueIfFalse
+                        return resultIf
+                    } else {
+                        return '#ERROR: Invalid condition'
+                    }
+
+                case 'CONCAT':
+                    const pattern = /[A-Z]+\d+|"(.*?)"/g;
+                    const newExpressionArray = expression.match(pattern) || [];
+                    let concatenatedString = ''
+
+                    for (const value of newExpressionArray) {
+                        if (value.startsWith('"') && value.endsWith('"')) {
+                            concatenatedString += value.slice(1, -1)
+                        }
+                        else {
+                            concatenatedString += keyValueArray[value]
+                        }
+                    }
+                    return concatenatedString
+
+                default:
+                    if (keyValueArray[operator]) {
+                        return keyValueArray[operator]
+                    }
             }
-
         }
-        // console.log('return value: ' + value)
         return value
     }
+    return all
 }
-
